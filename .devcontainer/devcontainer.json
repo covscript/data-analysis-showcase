@@ -14,7 +14,9 @@
         },
         "vscode": {
             "extensions": [
-                "mikecovlee.covscript"
+                "mikecovlee.covscript",
+                "grapecity.gc-excelviewer",
+                "mechatroner.rainbow-csv"
             ]
         }
     }
