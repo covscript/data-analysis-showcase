@@ -1,0 +1,183 @@
+import analysis
+import regex
+
+# 检查命令行参数是否有效
+
+if context.cmd_args.size != 3
+    system.out.println("Usage: fix_abnormal.ecs <K> <Function>")
+    system.exit(0)
+end
+
+# 预定义
+
+var num_reg = regex.build("^[0-9]+$")
+var name_reg = regex.build("^([A-Za-z-]+)([0-9]+)(r?)$")
+
+struct idx_type
+    var idx = 0
+    var reverse = false
+    function construct(i, r)
+        idx = i
+        reverse = r
+    end
+end
+
+# 从表头中构建数据分组信息
+
+var orig_data = analysis.read_csv("./output/merged_data.csv")
+var header = new array
+var data_group = new hash_map
+
+analysis.enumerate(orig_data.header, [](i, it){
+    var result = analysis.match_regex(name_reg, it)
+    if result != null
+        var (name, idx, reverse) = result
+        var data = new idx_type{i, (reverse == "r")}
+        if !data_group.exist(name)
+            header.push_back(name)
+            data_group.insert(name, new array)
+        end
+        data_group[name].push_back(data)
+    end
+})
+
+# 根据分组信息构造基础数据
+# 计算每个分组的均值
+
+constant valid_data_idx = 4
+var base_data = new analysis.dataframe{{"Number", "Name", "Gender", "Education", header...}}
+
+orig_data.foreach([](rec){
+    var line = {rec.by_name("Number"), rec.by_name("Name"), rec.by_name("Gender"), rec.by_name("Education")}
+    analysis.enumerate(header, [](pos, title){
+        var sum = 0
+        foreach data in data_group[title]
+            link val = rec.by_index(data.idx)
+            if analysis.match_regex(num_reg, val) != null
+                val = val => integer
+                sum += (data.reverse ? 6 - val : val)
+            else
+                sum += 0
+            end
+        end
+        line[valid_data_idx + pos] = (sum == 0 ? "#N/A" : sum/data_group[title].size)
+    })
+    base_data.append(line)
+})
+
+base_data.to_csv("./output/base_data.csv")
+
+# 均值填充
+# 计算每一列的均值
+
+var data_avg = new array
+var data_count = new array
+
+foreach rec in base_data.data
+    foreach i in range(rec.size - valid_data_idx)
+        link val = rec[valid_data_idx + i]
+        if val is number
+            data_avg[i] += val
+            ++data_count[i]
+        end
+    end
+end
+
+foreach i in range(data_avg.size) do data_avg[i] = data_avg[i] / data_count[i]
+
+# 填充空值
+
+var avg_fill_data = base_data
+
+foreach rec in avg_fill_data.data
+    foreach i in range(rec.size - valid_data_idx)
+        link val = rec[valid_data_idx + i]
+        if val not number
+            val = data_avg[i]
+        end
+    end
+end
+
+avg_fill_data.to_csv("./output/avg_fill.csv")
+
+# K-Means 填充
+
+# 数据距离度量方法
+namespace distance
+    # 欧几里得距离 Euclidean Distance
+    function euclidean(vec_a, vec_b)
+        var sum = 0
+        foreach i in range(valid_data_idx, vec_a.size)
+            var a = vec_a[i], b = vec_b[i]
+            if a not number
+                a = 0
+            end
+            if b not number
+                b = 0
+            end
+            sum += (a - b)^2
+        end
+        return math.sqrt(sum)
+    end
+
+    # 余弦相似度 Cosine Similarity
+    function cosine(vec_a, vec_b)
+        var dot_product = 0, norm_a = 0, norm_b = 0
+        foreach i in range(valid_data_idx, vec_a.size)
+            var a = vec_a[i], b = vec_b[i]
+            if a not number
+                a = 0
+            end
+            if b not number
+                b = 0
+            end
+            dot_product += a * b
+            norm_a += a^2
+            norm_b += b^2
+        end
+        return dot_product / (math.sqrt(norm_a) * math.sqrt(norm_b))
+    end
+end
+
+var func_map = {
+    "euclidean": distance.euclidean,
+    "cosine": distance.cosine
+} => hash_map
+
+var top_k = context.cmd_args[1] => integer
+var dist_func = func_map[context.cmd_args[2]]
+
+var top_k_fill_data = base_data
+
+foreach rec in top_k_fill_data.data
+    foreach i in range(valid_data_idx, rec.size)
+        if rec[i] not number
+            # 计算当前数据到数据表中所有数据的距离
+            var distance_list = new array
+            foreach i in range(top_k_fill_data.data.size)
+                distance_list.push_back(i:dist_func(rec, top_k_fill_data.data[i]))
+            end
+            # 按距离从小到大排序
+            distance_list.sort([](a, b)->(a.second < b.second))
+            # 计算 Top-K 的均值
+            var sum = 0
+            var count = top_k
+            while count > 0
+                # 取列表首元素
+                var top = distance_list.front
+                distance_list.pop_front()
+                # 定位至数据表中实际数据行
+                link line = top_k_fill_data.data[top.first]
+                # 跳过无效数据
+                if top.first == i || line[i] not number
+                    continue
+                end
+                sum += line[i]
+                --count
+            end
+            rec[i] = sum/top_k
+        end
+    end
+end
+
+top_k_fill_data.to_csv("./output/top_" + context.cmd_args[1] + "_" + context.cmd_args[2] + "_fill.csv")

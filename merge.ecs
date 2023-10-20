@@ -1,0 +1,28 @@
+import analysis
+import regex
+
+var ranking_df = analysis.read_csv("ranking_cleaned.csv")
+var labeled_df = analysis.read_csv("output/labeled_data.csv")
+
+function find_rec(number, name)
+    var reg = regex.build(number)
+    foreach rec in labeled_df.data
+        if not reg.search(rec[0]).empty() and name == rec[1]
+            return rec
+        end
+    end
+    return null
+end
+
+foreach rec in ranking_df.data
+    var number = rec[ranking_df.header_map["Number"]]
+    var name = rec[ranking_df.header_map["Name"]]
+    var data = find_rec(number, name)
+    if data != null
+        rec[ranking_df.header_map["Number"]] = data[0]
+        rec[ranking_df.header_map["Gender"]] = data[2]
+        rec[ranking_df.header_map["Education"]] = data[3]
+    end
+end
+
+ranking_df.to_csv("./output/merged_data.csv")

@@ -1,0 +1,31 @@
+import analysis
+import regex
+import codec.md5
+
+system.path.mkdir("cleaned_data")
+
+var entries = system.path.scan("orig_data/info_csvs")
+var file_reg = regex.build(".*\\.csv")
+foreach it in entries
+    if it.type == system.path.type.reg and not file_reg.match(it.name).empty()
+        var df = new analysis.dataframe{{"学号","姓名","性别","学历","毕业学校"}}
+        system.out.println("Processing " + it.name)
+        var csv = analysis.read_csv("orig_data/info_csvs/" + it.name)
+        system.out.println("Data size: " + csv.data.size)
+        csv = csv.select((df.header)...)
+        foreach rec in csv.data
+            link (id, name, ..., ..., ...) = rec
+            id = id.substr(0, 4) + "000" + id.substr(7, 6)
+            name = md5.hash_str(name)
+            df.data.push_back(rec)
+        end
+        df.to_csv("cleaned_data/" + it.name)
+    end
+end
+
+var df = analysis.read_csv("orig_data/ranking.csv")
+df.foreach([](rec){
+    link name = rec.by_name("Name")
+    name = md5.hash_str(name)
+})
+df.to_csv("./ranking_cleaned.csv")

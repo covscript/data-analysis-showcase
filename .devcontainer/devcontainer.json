@@ -1,0 +1,21 @@
+{
+    "name": "CovScript Analysis",
+    "image": "ubuntu:22.04",
+    "waitFor": "onCreateCommand",
+    "onCreateCommand": "bash .devcontainer/init-env.sh",
+    "postAttachCommand": {
+        "generation": "bash run.sh"
+    },
+    "customizations": {
+        "codespaces": {
+            "openFiles": [
+                "fix_abnormal.ecs"
+            ]
+        },
+        "vscode": {
+            "extensions": [
+                "mikecovlee.covscript"
+            ]
+        }
+    }
+}

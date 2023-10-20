@@ -1,0 +1,54 @@
+import analysis
+import unicode
+import regex
+
+var default_cvt = new unicode.codecvt.utf8
+var edu_reg = unicode.build_wregex(default_cvt.local2wide("大学"))
+
+var sex_map = {
+    "男": "1",
+    "女": "2"
+} => hash_map
+
+var edu_map = {
+    "专科": "1",
+    "本科": "2",
+    "硕士": "3",
+    "博士": "3",
+    "其他": "1"
+} => hash_map
+
+var entries = system.path.scan("cleaned_data")
+var file_reg = regex.build(".*\\.csv")
+var df = new analysis.dataframe{{"学号","姓名","性别","学历","毕业学校"}}
+foreach it in entries
+    if it.type == system.path.type.reg and not file_reg.match(it.name).empty()
+        system.out.println("Processing " + it.name)
+        var csv = analysis.read_csv("cleaned_data/" + it.name)
+        system.out.println("Data size: " + csv.data.size)
+        csv = csv.select((df.header)...)
+        foreach rec in csv.data
+            link (..., ..., sex, edu, school) = rec
+            if edu.empty()
+                if !edu_reg.search(default_cvt.local2wide(school)).empty()
+                    edu = "本科"
+                else
+                    edu = "其他"
+                end
+            end
+            if edu == "硕士研究生"
+                edu = "硕士"
+            end
+            if edu == "博士研究生"
+                edu = "博士"
+            end
+            sex = sex_map[sex]
+            edu = edu_map[edu]
+            df.data.push_back(rec)
+        end
+    end
+end
+
+df = df.select("学号","姓名","性别","学历")
+system.path.mkdir("output")
+df.to_csv("./output/labeled_data.csv")
